@@ -1,0 +1,4 @@
+# PySMT==0.9.1.dev139
+z3-solver==4.13.3.0
+psutil~=5.9.0
+tqdm~=4.65.0
