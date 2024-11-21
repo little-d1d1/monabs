@@ -1,7 +1,7 @@
 import argparse
 import logging
 import multiprocessing as mp
-# import csv
+import csv
 import random
 import time
 from typing import List, Tuple
@@ -11,7 +11,7 @@ import z3
 from monabs.cores.dis_check import disjunctive_check, disjunctive_check_incremental
 from monabs.cores.unary_check import unary_check, unary_check_cached
 from monabs.tests.formula_generator import FormulaGenerator
-
+from monabs.cores.con_check import intersection_based_check
 
 def check_identical(*lists):
     mismatched_pairs = []
@@ -46,7 +46,7 @@ def run_single_test(logic_type: str, timeout: int) -> Tuple[str, List[int], floa
     s.add(precond)
     if s.check() != z3.sat:
         # the precond is unsat/unknown; no need to test
-        return "invalid", -1
+        return "invalid", "-", -1
 
     # Measure execution time
     start_time = time.time()
@@ -55,31 +55,31 @@ def run_single_test(logic_type: str, timeout: int) -> Tuple[str, List[int], floa
         res_unary_cached = unary_check_cached(precond, constraints)
         res_dis = disjunctive_check(precond, constraints)
         res_dis_inc = disjunctive_check_incremental(precond, constraints)
-
-        # FIXME: has bugs...
-        # res_con = intersection_based_check(precond, constraints)
+        res_con = intersection_based_check(precond, constraints)
 
         # check for inconsistency
         check_res = check_identical(res_unary, res_unary_cached,
-                                    res_dis, res_dis_inc)
+                                    res_dis, res_dis_inc, res_con)
 
         if len(check_res) > 0:
             # find inconsistent results
             status = "failure"
+            test_results = "-"
         else:
             status = "success"
+            test_results = res_unary
     except z3.Z3Exception as e:
         status = f"error: {str(e)}"
     execution_time = time.time() - start_time
 
-    return status, execution_time
+    return status, test_results, execution_time
 
 
 def worker(args: Tuple[int, str, int, str]) -> Tuple[int, str, List[int], float]:
     """Worker function for parallel execution"""
     test_id, logic_type, timeout, _ = args
-    status, execution_time = run_single_test(logic_type, timeout)
-    return test_id, status, execution_time
+    status, test_results, execution_time = run_single_test(logic_type, timeout)
+    return test_id, status, test_results, execution_time
 
 
 def main():
@@ -109,7 +109,6 @@ def main():
         results = pool.map(worker, test_params)
 
     # Write results to CSV
-    """
     with open(args.output, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['test_id', 'logic_type', 'status', 'results', 'execution_time'])
@@ -117,7 +116,6 @@ def main():
             writer.writerow([test_id, args.logic_type, status, test_results, exec_time])
 
     logger.info(f"Results written to {args.output}")
-    """
 
     # Print summary
     success_count = sum(1 for r in results if r[1] == "success")
